@@ -11,7 +11,7 @@ from collections import Counter, namedtuple
 import warnings
 import numpy as np
 import pysubgroup as ps
-
+from tqdm.auto import tqdm
 
 class SubgroupDiscoveryTask:
     '''
@@ -30,7 +30,8 @@ class SubgroupDiscoveryTask:
 
 
 
-
+def no_progressbar(it, **kwargs):
+    return it
 
 class Apriori:
     def __init__(self, representation_type=None, combination_name='Conjunction', use_numba=True):
@@ -44,6 +45,7 @@ class Apriori:
         self.optimistic_estimate_name = 'optimistic_estimate'
         self.next_level = self.get_next_level
         self.compiled_func = None
+        self.progressbar = no_progressbar
         if use_numba:
             try:
                 import numba # pylint: disable=unused-import
@@ -55,7 +57,7 @@ class Apriori:
     def get_next_level_candidates(self, task, result, next_level_candidates):
         promising_candidates = []
         optimistic_estimate_function = getattr(task.qf, self.optimistic_estimate_name)
-        for sg in next_level_candidates:
+        for sg in tqdm(next_level_candidates, desc='processing initial candidates'):
             statistics = task.qf.calculate_statistics(sg, task.data)
             ps.add_if_required(result, sg, task.qf.evaluate(sg, statistics), task)
             optimistic_estimate = optimistic_estimate_function(sg, statistics)
@@ -123,7 +125,9 @@ class Apriori:
 
     def get_next_level(self, promising_candidates):
         precomputed_list = list((tuple(sg), sg[-1], hash(tuple(sg[:-1])), tuple(sg[:-1])) for sg in promising_candidates)
-        return list((*sg1, new_selector) for (sg1, _, hash_l, selectors_l), (_, new_selector, hash_r, selectors_r) in combinations(precomputed_list, 2)
+        total = len(precomputed_list) * (len(precomputed_list)-1)/2
+        the_combinations = self.progressbar(combinations(precomputed_list, 2), desc='computing next level candidates', total= total)
+        return list( (*sg1, new_selector) for (sg1, _, hash_l, selectors_l), (_, new_selector, hash_r, selectors_r) in the_combinations
                     if (hash_l == hash_r) and (selectors_l == selectors_r))
 
 
@@ -147,23 +151,21 @@ class Apriori:
             while next_level_candidates:
                 # check sgs from the last level
                 if self.use_vectorization:
-                    promising_candidates = self.get_next_level_candidates_vectorized(task, result, next_level_candidates)
+                    promising_last_level = self.get_next_level_candidates_vectorized(task, result, next_level_candidates)
                 else:
-                    promising_candidates = self.get_next_level_candidates(task, result, next_level_candidates)
+                    promising_last_level = self.get_next_level_candidates(task, result, next_level_candidates)
 
+                print('depth {} number of candidates={}'.format(depth, len(promising_last_level)))
 
                 if depth == task.depth:
                     break
 
-                if self.use_repruning:
-                    promising_candidates = self.reprune_lower_levels(promising_candidates, depth)
-
-                next_level_candidates_no_pruning = self.next_level(promising_candidates)
+                candidates_no_pruning = self.next_level(promising_last_level)
 
                 # select those selectors and build a subgroup from them
                 #   for which all subsets of length depth (=candidate length -1) are in the set of promising candidates
-                set_promising_candidates = set(tuple(p) for p in promising_candidates)
-                next_level_candidates = [ps.Subgroup(task.target, combine_selectors(selectors)) for selectors in next_level_candidates_no_pruning
+                set_promising_candidates = set(tuple(p) for p in promising_last_level)
+                next_level_candidates = [ps.Subgroup(task.target, combine_selectors(selectors)) for selectors in candidates_no_pruning
                                          if all((subset in set_promising_candidates) for subset in combinations(selectors, depth))]
                 depth = depth + 1
 
