@@ -100,7 +100,7 @@ class Apriori:
     def get_next_level_numba(self, promising_candidates):
 
         from numba import jit
-        if not hasattr(self, 'compiled_func'):
+        if not self.compiled_func:
             @jit
             def getNewCandidates(l, hashes):
                 result = []
