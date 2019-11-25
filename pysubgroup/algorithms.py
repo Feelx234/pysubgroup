@@ -100,7 +100,7 @@ class Apriori:
     def get_next_level_numba(self, promising_candidates):
 
         from numba import jit
-        if self.compiled_func:
+        if self.compiled_func is None:
             @jit
             def getNewCandidates(l, hashes):
                 result = []
@@ -117,7 +117,6 @@ class Apriori:
         l = [tuple(d[sel] for sel in selectors) for selectors in promising_candidates]
         arr = np.array(l, dtype=int)
 
-        print(len(arr))
         hashes = np.array([hash(tuple(x[:-1])) for x in l], dtype=np.int64)
         candidates_int = self.compiled_func(arr, hashes)
         return list((*promising_candidates[i], promising_candidates[j][-1])  for i, j in candidates_int)
