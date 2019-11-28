@@ -3,7 +3,6 @@ import pysubgroup as ps
 from pysubgroup.tests.DataSets import get_credit_data
 
 from pysubgroup.tests.algorithms_testing import TestAlgorithmsBase
-
 class TestSettings:
     All = True
     Apriori = False
@@ -14,6 +13,7 @@ class TestSettings:
     DFS_set = False
     DFS_numpyset = False
     SimpleSearch = False
+    DFS_cupy = False
 
 skip_long_running = True
 class BooleanTargetBase():
@@ -38,6 +38,11 @@ class BooleanTargetBase():
     @unittest.skipUnless(TestSettings.All or TestSettings.DFS_bitset, 'flag not set')
     def test_DFS_bitset(self):
         self.runAlgorithm(ps.DFS(ps.BitSetRepresentation), "DFS bitset", self.result, self.qualities, self.task)
+    
+    @unittest.skipUnless(TestSettings.All or TestSettings.DFS_cupy, 'flag not set')
+    def test_DFS_cupy(self):
+        from pysubgroup.cupy_representation import CupyBitSetRepresentation
+        self.runAlgorithm(ps.DFS(CupyBitSetRepresentation), "DFS cupy", self.result, self.qualities, self.task)
 
     @unittest.skipIf(skip_long_running, "as skip_long_running flag is True")
     @unittest.skipUnless(TestSettings.All or TestSettings.SimpleSearch, 'flag not set')

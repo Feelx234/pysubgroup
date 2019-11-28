@@ -118,17 +118,17 @@ class SimplePositivesQF(ps.AbstractInterestingnessMeasure):
     def calculate_constant_statistics(self, task):
         data = task.data
         self.positives = task.target.covers(data)
-        self.datatset = SimplePositivesQF.tpl(len(data), np.sum(self.positives))
+        self.datatset = SimplePositivesQF.tpl(len(data), np.count_nonzero(self.positives))
         self.has_constant_statistics = True
 
     def calculate_statistics(self, subgroup, data=None):
         if hasattr(subgroup, "representation"):
-            cover_arr = subgroup
+            cover_arr = subgroup.representation
             size = subgroup.size
         else:
             cover_arr = subgroup.covers(data)
             size = np.count_nonzero(cover_arr)
-        return SimplePositivesQF.tpl(size, np.count_nonzero(self.positives[cover_arr]))
+        return SimplePositivesQF.tpl(size, np.count_nonzero(np.logical_and(self.positives, cover_arr)))
 
     def is_applicable(self, subgroup):
         return isinstance(subgroup.target, NominalTarget)
