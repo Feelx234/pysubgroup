@@ -282,17 +282,18 @@ def create_numeric_selectors(data, nbins=5, intervals_only=True, weighting_attri
 
 def create_numeric_selector_for_attribute(data, attr_name, nbins=5, intervals_only=True, weighting_attribute=None):
     numeric_selectors = []
-    data_not_null = data[data[attr_name].notnull()]
+    target_data = data[attr_name].to_numpy()
+    data_not_null = target_data[pd.notnull(target_data)]
 
-    uniqueValues = np.unique(data_not_null[attr_name])
-    if len(data_not_null.index) < len(data.index):
+    uniqueValues = np.unique(data_not_null)
+    if len(data_not_null) < len(data):
         numeric_selectors.append(NominalSelector(attr_name, np.nan))
 
     if len(uniqueValues) <= nbins:
         for val in uniqueValues:
             numeric_selectors.append(NominalSelector(attr_name, val))
     else:
-        cutpoints = ps.equal_frequency_discretization(data, attr_name, nbins, weighting_attribute)
+        cutpoints = ps.equal_frequency_discretization2(data_not_null, nbins)
         if intervals_only:
             old_cutpoint = float("-inf")
             for c in cutpoints:

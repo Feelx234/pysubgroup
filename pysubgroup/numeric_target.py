@@ -103,24 +103,27 @@ class StandardQFNumeric(ps.BoundedInterestingnessMeasure):
 
     def calculate_statistics(self, subgroup, data=None):
         if hasattr(subgroup, "representation"):
-            cover_arr = np.array(subgroup)
+            cover_arr = subgroup.representation
         else:
             cover_arr = subgroup.covers(data)
-        sg_size = np.count_nonzero(cover_arr)
-        sg_mean = np.array([0])
-        sg_target_values = 0
+
+        sg_mean = 0
+        sg_target_values = self.all_target_values[cover_arr]
+        sg_size = len(sg_target_values)
         if sg_size > 0:
-            sg_target_values = self.all_target_values[cover_arr]
             sg_mean = np.mean(sg_target_values)
-            estimate = self.estimator.get_estimate(subgroup, sg_size, sg_mean, cover_arr, sg_target_values)
-        else:
-            estimate = float('-inf')
-        return StandardQFNumeric.tpl(sg_size, sg_mean, estimate)
+
+        return StandardQFNumeric.tpl(sg_size, sg_mean, sg_target_values)
 
 
     def optimistic_estimate(self, subgroup, statistics=None):
         statistics = self.ensure_statistics(subgroup, statistics)
-        return statistics.estimate
+        sg_size, sg_mean, sg_target_values = statistics
+        if sg_size > 0:
+            estimate = self.estimator.get_estimate(subgroup, sg_size, sg_mean, sg_target_values)
+        else:
+            estimate = float('-inf')
+        return estimate
 
     def is_applicable(self, subgroup):
         return isinstance(subgroup.target, NumericTarget)
@@ -207,7 +210,7 @@ class StandardQFNumeric(ps.BoundedInterestingnessMeasure):
                 self._get_estimate = estimate_numba
                 self.numba_in_place = True
 
-        def get_estimate(self, subgroup, sg_size, sg_mean, cover_arr, target_values_sg):
+        def get_estimate(self, subgroup, sg_size, sg_mean, target_values_sg):
             if self.numba_in_place:
                 return self._get_estimate(target_values_sg, self.qf.a, self.qf.dataset.mean)
             else:

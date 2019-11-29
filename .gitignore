@@ -6,6 +6,7 @@ build
 .vscode
 /.vs/pysubgroup/v16
 /env_pysubgroup_new
+/env_pysubgroup
 /pysubgroup.egg-info
 .vs
 /.pytest_cache/v/cache

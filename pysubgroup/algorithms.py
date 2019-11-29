@@ -11,7 +11,7 @@ from collections import Counter, namedtuple
 import warnings
 import numpy as np
 import pysubgroup as ps
-
+from tqdm import tqdm
 
 class SubgroupDiscoveryTask:
     '''
@@ -29,21 +29,27 @@ class SubgroupDiscoveryTask:
         self.weighting_attribute = weighting_attribute
 
 
-
+def tqdm_placeholder(val, *args, **kwargs):
+    return val
 
 
 class Apriori:
-    def __init__(self, representation_type=None, combination_name='Conjunction', use_numba=True):
+    def __init__(self, representation_type=None, combination_name='Conjunction', use_numba=True, show_progress=False):
         self.combination_name = combination_name
 
         if representation_type is None:
             representation_type = ps.BitSetRepresentation
         self.representation_type = representation_type
-        self.use_vectorization = True
+        self.use_vectorization = False
         self.use_repruning = False
         self.optimistic_estimate_name = 'optimistic_estimate'
         self.next_level = self.get_next_level
         self.compiled_func = None
+        self.combine_selectors = None
+        
+        self.tqdm = tqdm_placeholder
+        if show_progress:
+            self.tqdm = tqdm
         if use_numba:
             try:
                 import numba # pylint: disable=unused-import
@@ -52,16 +58,20 @@ class Apriori:
             except ImportError:
                 pass
 
-    def get_next_level_candidates(self, task, result, next_level_candidates):
+    def get_next_level_candidates(self, task, result, next_level_candidates, depth):
+        print(depth)
         promising_candidates = []
         optimistic_estimate_function = getattr(task.qf, self.optimistic_estimate_name)
-        for sg in next_level_candidates:
+        _next_level_candidates = self.tqdm(next_level_candidates)
+        for selectors in _next_level_candidates:
+            sg = self.combine_selectors(selectors)
             statistics = task.qf.calculate_statistics(sg, task.data)
             ps.add_if_required(result, sg, task.qf.evaluate(sg, statistics), task)
-            optimistic_estimate = optimistic_estimate_function(sg, statistics)
+            if depth < task.depth:
+                optimistic_estimate = optimistic_estimate_function(sg, statistics)
 
-            if optimistic_estimate >= ps.minimum_required_quality(result, task):
-                promising_candidates.append((optimistic_estimate, list(sg.subgroup_description._selectors)))
+                if optimistic_estimate >= ps.minimum_required_quality(result, task):
+                    promising_candidates.append((optimistic_estimate, selectors))
         min_quality = ps.minimum_required_quality(result, task)
         promising_candidates = [selectors for estimate, selectors in promising_candidates if estimate > min_quality]
         return promising_candidates
@@ -83,7 +93,7 @@ class Apriori:
         min_quality = ps.minimum_required_quality(result, task)
         for sg, optimistic_estimate in zip(next_level_candidates, optimistic_estimates):
             if optimistic_estimate >= min_quality:
-                promising_candidates.append(list(sg.subgroup_description._selectors))
+                promising_candidates.append(list(sg._selectors))
         return promising_candidates
 
 
@@ -136,12 +146,12 @@ class Apriori:
         task.qf.calculate_constant_statistics(task)
         
         with self.representation_type(task.data) as representation:
-            combine_selectors = getattr(representation.__class__, self.combination_name)
+            self.combine_selectors = getattr(representation.__class__, self.combination_name)
             result = []    
             # init the first level
             next_level_candidates = []
             for sel in task.search_space:
-                next_level_candidates.append(ps.Subgroup(task.target, combine_selectors([sel])))
+                next_level_candidates.append([sel])
 
             # level-wise search
             depth = 1
@@ -150,7 +160,7 @@ class Apriori:
                 if self.use_vectorization:
                     promising_candidates = self.get_next_level_candidates_vectorized(task, result, next_level_candidates)
                 else:
-                    promising_candidates = self.get_next_level_candidates(task, result, next_level_candidates)
+                    promising_candidates = self.get_next_level_candidates(task, result, next_level_candidates, depth)
 
 
                 if depth == task.depth:
@@ -160,11 +170,11 @@ class Apriori:
                     promising_candidates = self.reprune_lower_levels(promising_candidates, depth)
 
                 next_level_candidates_no_pruning = self.next_level(promising_candidates)
-
+                print('testing {} candidates'.format(len(next_level_candidates_no_pruning)))
                 # select those selectors and build a subgroup from them
                 #   for which all subsets of length depth (=candidate length -1) are in the set of promising candidates
                 set_promising_candidates = set(tuple(p) for p in promising_candidates)
-                next_level_candidates = [ps.Subgroup(task.target, combine_selectors(selectors)) for selectors in next_level_candidates_no_pruning
+                next_level_candidates = [selectors for selectors in next_level_candidates_no_pruning
                                          if all((subset in set_promising_candidates) for subset in combinations(selectors, depth))]
                 depth = depth + 1
 

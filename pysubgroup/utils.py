@@ -47,7 +47,7 @@ def equal_frequency_discretization(data, attribute_name, nbins=5, weighting_attr
     if weighting_attribute is None:
         cleaned_data = data[attribute_name]
         cleaned_data = cleaned_data[~np.isnan(cleaned_data)]
-        sorted_data = sorted(cleaned_data)
+        sorted_data = np.sort(cleaned_data.to_numpy())
         number_instances = len(sorted_data)
         for i in range(1, nbins):
             position = i * number_instances // nbins
@@ -79,6 +79,27 @@ def equal_frequency_discretization(data, attribute_name, nbins=5, weighting_attr
                     if remaining_weights < 1.5 * (bin_size):
                         break
                     sum_of_weights = 0
+    return cutpoints
+
+from numba import njit
+
+def equal_frequency_discretization2(cleaned_data, nbins=5):
+    cutpoints = []
+    sorted_data = np.sort(cleaned_data)
+    number_instances = len(sorted_data)
+    if number_instances > 0:
+        for i in range(1, nbins):
+            position = i * number_instances // nbins
+            while True:
+                if position >= number_instances:
+                    break
+                val = sorted_data[position]
+                if val not in cutpoints:
+                    break
+                position += 1
+            # print (sorted_data [position])
+            if val not in cutpoints:
+                cutpoints.append(val)
     return cutpoints
 
 

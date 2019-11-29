@@ -153,7 +153,7 @@ class SetRepresentation(RepresentationBase):
 
 
 class NumpySet_Conjunction(ps.Conjunction):
-    all_set = set()
+    all_set = np.array([], dtype=int)
 
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
@@ -163,7 +163,7 @@ class NumpySet_Conjunction(ps.Conjunction):
                 # empty description ==> return a list of all '1's
         if not self._selectors:
             return NumpySet_Conjunction.all_set
-        start = self._selectors[0]
+        start = self._selectors[0].representation
         for sel in self._selectors[1:]:
             start = np.intersect1d(start, sel.representation, True)
         return start
@@ -188,12 +188,13 @@ class NumpySet_Conjunction(ps.Conjunction):
 
 
 class NumpySetRepresentation(RepresentationBase):
+        Conjunction = NumpySet_Conjunction
     def __init__(self, df):
         self.df = df
         super().__init__(NumpySet_Conjunction)
 
     def patch_selector(self, sel):
-        sel.representation = np.nonzero(sel.covers(self.df))
+        sel.representation = np.nonzero(sel.covers(self.df))[0]
 
     def patch_classes(self):
         NumpySet_Conjunction.all_set = self.df.index.to_numpy()
