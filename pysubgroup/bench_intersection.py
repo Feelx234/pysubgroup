@@ -128,6 +128,6 @@ y_gpu = cp.asarray(y_dense)
 
 cp.cuda.Stream.null.synchronize()
 start_time = time.time()
-z_gpu = cp.sum(np.logical_and(x_gpu, y_gpu))
+z_gpu = cp.sum(cp.logical_and(x_gpu, y_gpu))
 cp.cuda.Stream.null.synchronize()
-print("cupy_extern  --- %s seconds ---" % (time.time() - start_time))
+print("cupy_8bit  --- %s seconds ---" % (time.time() - start_time))
