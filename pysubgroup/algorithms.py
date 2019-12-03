@@ -31,10 +31,19 @@ class SubgroupDiscoveryTask:
 
 def tqdm_placeholder(val, *args, **kwargs):
     return val
-
+from multiprocessing.pool import ThreadPool
+import functools
+def _test(combine_selectors, task, depth, selectors):
+    sg = combine_selectors(selectors)
+    statistics = task.qf.calculate_statistics(sg, task.data)
+    quality = task.qf.evaluate(sg, statistics)
+    optimistic_estimate = -1000
+    if depth < task.depth:
+        optimistic_estimate = task.qf.optimistic_estimate(sg, statistics)
+    return quality, optimistic_estimate
 
 class Apriori:
-    def __init__(self, representation_type=None, combination_name='Conjunction', use_numba=True, show_progress=False):
+    def __init__(self, representation_type=None, combination_name='Conjunction', use_numba=True, show_progress=False, use_parallelisation=False):
         self.combination_name = combination_name
 
         if representation_type is None:
@@ -46,6 +55,7 @@ class Apriori:
         self.next_level = self.get_next_level
         self.compiled_func = None
         self.combine_selectors = None
+        self.use_parallelisation = use_parallelisation
         
         self.tqdm = tqdm_placeholder
         if show_progress:
@@ -72,6 +82,23 @@ class Apriori:
 
                 if optimistic_estimate >= ps.minimum_required_quality(result, task):
                     promising_candidates.append((optimistic_estimate, selectors))
+        min_quality = ps.minimum_required_quality(result, task)
+        promising_candidates = [selectors for estimate, selectors in promising_candidates if estimate > min_quality]
+        return promising_candidates
+
+    def get_next_level_candidates_parallel(self, task, result, next_level_candidates, depth):
+        print(depth)
+        promising_candidates = []
+        optimistic_estimate_function = getattr(task.qf, self.optimistic_estimate_name)
+        min_quality = ps.minimum_required_quality(result, task)
+        pool = ThreadPool(8)
+
+        fun = functools.partial(_test, self.combine_selectors,task,depth)
+        for (quality, estimate), selectors in tqdm(zip(pool.imap(fun, next_level_candidates,chunksize=5000), next_level_candidates),total=len(next_level_candidates), smoothing=0):
+            ps.add_if_required(result, tuple(selectors), quality, task)
+            if estimate >= min_quality:
+                promising_candidates.append((estimate, selectors))
+                min_quality = ps.minimum_required_quality(result, task)
         min_quality = ps.minimum_required_quality(result, task)
         promising_candidates = [selectors for estimate, selectors in promising_candidates if estimate > min_quality]
         return promising_candidates
@@ -160,7 +187,10 @@ class Apriori:
                 if self.use_vectorization:
                     promising_candidates = self.get_next_level_candidates_vectorized(task, result, next_level_candidates)
                 else:
-                    promising_candidates = self.get_next_level_candidates(task, result, next_level_candidates, depth)
+                    if self.use_parallelisation:
+                        promising_candidates = self.get_next_level_candidates_parallel(task, result, next_level_candidates, depth)
+                    else:
+                        promising_candidates = self.get_next_level_candidates(task, result, next_level_candidates, depth)
 
 
                 if depth == task.depth:
