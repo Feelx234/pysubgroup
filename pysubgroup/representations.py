@@ -44,6 +44,10 @@ class BitSet_Conjunction(ps.Conjunction):
                 # empty description ==> return a list of all '1's
         if not self._selectors:
             return np.full(BitSet_Conjunction.n_instances, True, dtype=bool)
+        if len(self._selectors) == 1:
+            return np.copy(self._selectors[0])
+        if len(self._selectors) == 2:
+            return np.logical_and(self._selectors[0].representation, self._selectors[1].representation)
         # non-empty description
         return np.all([sel.representation for sel in self._selectors], axis=0)
 
@@ -188,7 +192,7 @@ class NumpySet_Conjunction(ps.Conjunction):
 
 
 class NumpySetRepresentation(RepresentationBase):
-        Conjunction = NumpySet_Conjunction
+    Conjunction = NumpySet_Conjunction
     def __init__(self, df):
         self.df = df
         super().__init__(NumpySet_Conjunction)
