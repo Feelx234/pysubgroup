@@ -45,7 +45,7 @@ class BitSet_Conjunction(ps.Conjunction):
         if not self._selectors:
             return np.full(BitSet_Conjunction.n_instances, True, dtype=bool)
         if len(self._selectors) == 1:
-            return np.copy(self._selectors[0])
+            return np.copy(self._selectors[0].representation)
         if len(self._selectors) == 2:
             return np.logical_and(self._selectors[0].representation, self._selectors[1].representation)
         # non-empty description
