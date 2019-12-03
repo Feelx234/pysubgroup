@@ -2,9 +2,9 @@ import pandas as pd
 import pysubgroup as ps
 import pickle as pickle
 windows_prefix= 'E:/tmp/'
-linux_prefix = '/home/felix/'
+linux_prefix = '/home/felixstamm/'
 
-prefix = windows_prefix
+prefix = linux_prefix
 df = pd.read_pickle(prefix+'dump_felix.pkl.gzip', compression='gzip')
 path = '/home/felix/selectors.pickle'
 selectors = ps.create_selectors(df, ignore=['address','balance_2019-04'])
