@@ -75,6 +75,7 @@ class StandardQFNumeric(ps.BoundedInterestingnessMeasure):
         self.dataset = None
         self.all_target_values = None
         self.has_constant_statistics = False
+        self.min_size = 0
         if estimator == 'sum':
             self.estimator = StandardQFNumeric.Summation_Estimator(self)
         elif estimator == 'average':
@@ -110,7 +111,7 @@ class StandardQFNumeric(ps.BoundedInterestingnessMeasure):
         sg_mean = 0
         sg_target_values = self.all_target_values[cover_arr]
         sg_size = len(sg_target_values)
-        if sg_size > 0:
+        if sg_size > self.min_size:
             sg_mean = np.mean(sg_target_values)
 
         return StandardQFNumeric.tpl(sg_size, sg_mean, sg_target_values)
@@ -119,7 +120,7 @@ class StandardQFNumeric(ps.BoundedInterestingnessMeasure):
     def optimistic_estimate(self, subgroup, statistics=None):
         statistics = self.ensure_statistics(subgroup, statistics)
         sg_size, sg_mean, sg_target_values = statistics
-        if sg_size > 0:
+        if sg_size > self.min_size:
             estimate = self.estimator.get_estimate(subgroup, sg_size, sg_mean, sg_target_values)
         else:
             estimate = float('-inf')
@@ -194,12 +195,13 @@ class StandardQFNumeric(ps.BoundedInterestingnessMeasure):
                     print('StandardQf_Numeric: Using numba for speedup')
                 except ImportError:
                     return
-                @njit
-                def estimate_numba(values_sg, a, mean_dataset):
-                    n = 1
-                    sum_values = 0
+                @njit(nogil=True)
+                def estimate_numba(values_sg, a, mean_dataset, min_size):
+                    n = min_size + 1
+                    sum_values = np.sum(values_sg[:min_size])
                     max_value = -10 ** 10
-                    for val in values_sg:
+                    
+                    for val in values_sg[min_size:]:
                         sum_values += val
                         mean_sg = sum_values / n
                         quality = n ** a * (mean_sg - mean_dataset)
@@ -212,11 +214,11 @@ class StandardQFNumeric(ps.BoundedInterestingnessMeasure):
 
         def get_estimate(self, subgroup, sg_size, sg_mean, target_values_sg):
             if self.numba_in_place:
-                return self._get_estimate(target_values_sg, self.qf.a, self.qf.dataset.mean)
+                return self._get_estimate(target_values_sg, self.qf.a, self.qf.dataset.mean, self.qf.min_size)
             else:
-                return self._get_estimate(target_values_sg, self.qf.a, self.qf.dataset.mean)
+                return self._get_estimate(target_values_sg, self.qf.a, self.qf.dataset.mean, self.qf.min_size)
 
-        def get_estimate_numpy(self, values_sg, a, mean_dataset):
+        def get_estimate_numpy(self, values_sg, a, mean_dataset, min_size):
             target_values_cs = np.cumsum(values_sg)
             sizes = np.arange(1, len(target_values_cs) + 1)
             mean_values = target_values_cs / sizes
