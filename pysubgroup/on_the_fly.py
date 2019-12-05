@@ -1,6 +1,6 @@
 import numpy as np
 import time
-n=1000
+n=5000
 s=np.random.rand(n)
 t=np.sort(np.random.rand(n))[::-1]
 my_mean=np.mean(t)
@@ -86,6 +86,26 @@ class tmp:
                     self.best_l = left
                     self.best_r = right
 
+    def naive_plus(self, s_2_t, t_in):
+        t = t_in[s_2_t]
+        t_cumsum = np.cumsum(t)-t[0]
+        _, min_width, max_width = self.get_bounds(t_in, self.best)
+        for width in range(1, len(t_in)):
+            if width < min_width:
+                continue
+            if width > max_width:
+                break
+            power = (width ** self.a)
+            for left in range(0, len(t_in)-width):
+                right = left + width
+                curr_qual = power * ((t_cumsum[right]-t_cumsum[left])/width - my_mean)
+
+                if curr_qual > self.best:
+                    self.best = curr_qual
+                    self.best_l = left
+                    self.best_r = right
+                    _, min_width, max_width = self.get_bounds(t_in, self.best)
+
 
     def apriori(self, t_2_s, s_2_t, t_in, start=None, stop=None, previous_left_in=None):
         if start is None:
@@ -140,6 +160,24 @@ class tmp:
         for n_max, v in enumerate(t_in-t_mean):
             if v < 0:
                 break
+
+        t_cumsum = np.cumsum(t_in - t_mean)-(t_in[0]+t_mean)
+        val = t_cumsum[n_max]
+        for min_chop_off in range(0, n_max):
+            if  val - t_cumsum[min_chop_off] < bound:
+                break
+        t_averaged = t_in - t_mean
+        t_cumsum_bad = np.cumsum(t_averaged[::-1])
+        t_cumsum_bad -= t_cumsum_bad[0]
+        for min_general in range(0, n_max):
+            if val + t_cumsum_bad[min_general] < bound:
+                break
+
+        print(n_max)
+        print('lower loose bound', n_max - min_chop_off)
+        print('upper loose bound', len(t_in)-min_general)
+        #return n_max, n_max - min_chop_off, len(t_in)-min_general
+
         t_cumsum = np.cumsum(t_in - t_mean)-(t_in[0]+t_mean)
         val = t_cumsum[n_max]
         for min_chop_off in range(n_max, 0, -1):
@@ -154,18 +192,19 @@ class tmp:
                 break
         
         print(n_max)
-        print('lower bound', min_chop_off)
-        print('upper_bound', n_max + min_general)
+        print('lower strict bound', min_chop_off)
+        print('upper strict bound', min_general)
         return n_max, min_chop_off, min_general
+        
 
 
     def bounded(self, t_2_s, s_2_t, t_in):
-        n_max, min_chop_off, min_general = self.get_bounds(t_in,1)
-        self.generalising_apriori(t_2_s, s_2_t, t_in, start=n_max+min_general, previous_left_in = None)
+        n_max, min_chop_off, min_general = self.get_bounds(t_in,30)
+        self.generalising_apriori(t_2_s, s_2_t, t_in, start=min_general, previous_left_in = None)
         self.apriori(t_2_s, s_2_t, t_in, start=min_chop_off, previous_left_in = None)
         print(self.best)
         n_max, min_chop_off, min_general = self.get_bounds(t_in,self.best)
-        self.generalising_apriori(t_2_s, s_2_t, t_in, start=n_max+min_general, previous_left_in = None)
+        self.generalising_apriori(t_2_s, s_2_t, t_in, start=min_general, previous_left_in = None)
         self.apriori(t_2_s, s_2_t, t_in, start=min_chop_off, previous_left_in = None)
 
 
@@ -239,14 +278,18 @@ class tmp:
             top = max(top+10,0)
             print(bottom, self.best)
 
+    def growth(self, t_2_s, s_2_t, t_in):
+        pass
+
 
 print(n*(n/1)/2)
 
 algo = tmp()
 start_time = time.time()
-algo.naive(inds_a, t)
+algo.naive_plus(inds_a, t)
 print('naive'+" --- %s seconds ---" % (time.time() - start_time))
 print(algo.best_l, algo.best_r, algo.best, algo.num_calls)
+
 
 algo = tmp()
 start_time = time.time()
@@ -255,7 +298,7 @@ print('bounded'+" --- %s seconds ---" % (time.time() - start_time))
 print(algo.best_l, algo.best_r, algo.best, algo.num_calls)
 #for tpl in algo.num_candidates:
 #    print(tpl)
-
+quit()
 
 algo = tmp()
 start_time = time.time()
