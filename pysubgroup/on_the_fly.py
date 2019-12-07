@@ -1,6 +1,6 @@
 import numpy as np
 import time
-n=5000
+n=1000
 s=np.random.rand(n)
 t=np.sort(np.random.rand(n))[::-1]
 my_mean=np.mean(t)
@@ -278,8 +278,109 @@ class tmp:
             top = max(top+10,0)
             print(bottom, self.best)
 
-    def growth(self, t_2_s, s_2_t, t_in):
+    def left_right_order(self, L, R):
+        l=0
+        r=0
+        out=np.empty(len(L)+len(R))
+        while l < len(L) and r < len(R):
+            if L[l] > R[r]:
+                out[l+r] = L[l]
+                l+=1
+            else:
+                out[l+r] = R[r]
+                r+=1
+        while l<len(L):
+            out[l+r] = L[l]
+            l+=1
+        while r<len(R):
+            out[l+r] = R[r]
+            r+=1
+        return out[:l+r]
+
+    def generalising_apriori2(self, t_2_s, s_2_t, t_in, start=None, stop=None, previous_left_in=None):
+        t = t_in[s_2_t]
+        t_mean = np.mean(t)
+        t_cumsum = np.cumsum(t)-t[0]
+        k=100
+        test = t-t_mean
+        maxs = np.array(k)
+        sums = np.array(k)
+        for i, arr in enumerate(np.split(test, k)):
+            cs = np.cumsum(arr)
+            maxs[i] = np.max(arr)
+            sums[i] = arr[-1]
+
+        sums2=np.cumsum(sums)
+        real_maxes = []
+        for i in range(k):
+            l=[]
+            for j in range(i, k-1):
+                l.append(sums2[j]-sums2[i] + maxs[j])
+
+                
+        if start is None:
+            start = 1
+        if stop is None:
+            stop = len(t_in)
+        if previous_left_in is not None:
+            previous_left = previous_left_in
+        else:
+            previous_left = list(range(len(t_in)-start-1))
+        lookup = np.zeros(len(t_in), dtype=bool)
+        previous_promising = []
+        for depth in tqdm(range(start, stop)):
+            lookup[:] = False
+            if len(previous_left) == 0:
+                break
+            self.num_candidates.append((self.best, len(previous_left), depth))
+            lookup[previous_left] = True
+            candidates = []
+            for l in previous_left:
+                if l == 0:
+                    if not lookup[l]:
+                        candidates.append(l)
+                else:
+                    candidates.append(l-1)
+                    if not lookup[l]:
+                        candidates.append(l)
+            delta = depth
+            previous_left.clear()
+            sizes = np.arange(delta, len(t_in))
+            sizes_a = sizes ** self.a
+            best_est=-100
+            for left in candidates:
+                #print(left)
+                #print(delta)
+                self.num_calls += 1
+                right = left+delta
+                size = right-left
+                #print(size)
+                curr_qual = (size ** self.a) * ((t_cumsum[right]-t_cumsum[left])/size - my_mean)
+                #arr = np.cumsum(self.left_right_order(t[left:0:-1], t[right:]))
+                
+                estimate = ((t_cumsum[right]-t_cumsum[left])/size - my_mean) + test[left]
+                best_est=max(estimate,best_est)
+                #print(curr_qual, estimate)
+                if curr_qual > self.best:
+                    self.best = curr_qual
+                    self.best_l = left
+                    self.best_r = right
+                if estimate > self.best:
+                    previous_promising.append((estimate, left))
+            print(best_est)
+            for estimate, left in previous_promising:
+                if estimate > self.best:
+                    previous_left.append(left)
+            previous_promising.clear()
+        return previous_left
+
+
+    def the_real_stuff(self, t_2_s, s_2_t, t_in, start=None, stop=None, previous_left_in=None):
         pass
+    
+
+    
+            
 
 
 print(n*(n/1)/2)
@@ -293,8 +394,8 @@ print(algo.best_l, algo.best_r, algo.best, algo.num_calls)
 
 algo = tmp()
 start_time = time.time()
-algo.bounded(ts, inds_a, t)
-print('bounded'+" --- %s seconds ---" % (time.time() - start_time))
+algo.generalising_apriori2(ts, inds_a, t)
+print('apriori2'+" --- %s seconds ---" % (time.time() - start_time))
 print(algo.best_l, algo.best_r, algo.best, algo.num_calls)
 #for tpl in algo.num_candidates:
 #    print(tpl)
