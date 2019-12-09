@@ -8,8 +8,7 @@ inds_a = np.argsort(s)
 ts = np.empty(n,dtype=int)
 for i, val in enumerate(inds_a):
     ts[val] = i
-from tqdm import tqdm
-from itertools import chain
+from itertools import chain, product
 class tmp:
     def __init__(self):
         self.best =- 100
@@ -72,8 +71,11 @@ class tmp:
                     self.f(t_2_s, s_2_t, t, left+1, right, False)
                     self.f(t_2_s, s_2_t, t, left, right-1, False)
 
-    def naive(self, s_2_t, t_in):
-        t = t_in[s_2_t]
+    def naive(self, t_in, s_2_t=None):
+        if s_2_t is None:
+            t = t_in
+        else:
+            t = t_in[s_2_t]
         t_cumsum = np.cumsum(t)-t[0]
         for width in range(1, len(t_in)):
             power = (width ** self.a)
@@ -297,25 +299,43 @@ class tmp:
             r+=1
         return out[:l+r]
 
+
+
     def generalising_apriori2(self, t_2_s, s_2_t, t_in, start=None, stop=None, previous_left_in=None):
         t = t_in[s_2_t]
+        
         t_mean = np.mean(t)
         t_cumsum = np.cumsum(t)-t[0]
-        k=100
+        k=10
         test = t-t_mean
-        maxs = np.array(k)
-        sums = np.array(k)
-        for i, arr in enumerate(np.split(test, k)):
-            cs = np.cumsum(arr)
-            maxs[i] = np.max(arr)
-            sums[i] = arr[-1]
+        print(np.sum(test))
+        real_maxes_right, indices_right,sums=self.compute_sums(k, test)
+        #for l,index in zip(real_maxes_right, indices_right):
+        #    print(l)
+        #    print(index)
 
-        sums2=np.cumsum(sums)
-        real_maxes = []
-        for i in range(k):
-            l=[]
-            for j in range(i, k-1):
-                l.append(sums2[j]-sums2[i] + maxs[j])
+        real_maxes_left, indices_left,_=self.compute_sums(k, test[::-1])
+        real_maxes_left=list(reversed(real_maxes_left))
+        indices_left=list(reversed(indices_left))
+        #for l in real_maxes_left:
+        #    print(l)
+
+        best_score = []
+        right_estimates=[]
+        left_estimates=[]
+        for left_list, right_list in zip(real_maxes_left, real_maxes_right):
+            left = 0
+            if len(left_list) >0:
+                left=np.max(left_list)
+            right = 0
+            if len(right_list) >0:
+                right=np.max(right_list)
+            right_estimates.append(right)
+            left_estimates.append(left)
+        print(sums)
+        lr_estimates=[l+r+s for l,r,s in zip(left_estimates, right_estimates,sums)]
+        print(lr_estimates)
+        print(np.max(lr_estimates))
 
                 
         if start is None:
@@ -328,7 +348,7 @@ class tmp:
             previous_left = list(range(len(t_in)-start-1))
         lookup = np.zeros(len(t_in), dtype=bool)
         previous_promising = []
-        for depth in tqdm(range(start, stop)):
+        for depth in range(start, stop):
             lookup[:] = False
             if len(previous_left) == 0:
                 break
@@ -375,8 +395,90 @@ class tmp:
         return previous_left
 
 
+    def compute_sums(self, k, arr_in):
+        maxs = np.empty(k)
+        sums = np.empty(k)
+        max_index=np.empty(k,dtype=int)
+        for i, arr in enumerate(np.split(arr_in, k)):
+            cs = np.cumsum(arr)
+            max_index[i]=np.argmax(cs)
+            maxs[i] = np.max(cs)
+            sums[i] = cs[-1]
+
+        sums2=np.cumsum(sums)
+        real_maxes = []
+        real_indcies = []
+        for i in range(k):
+            l=[]
+            indices=[]
+            for j in range(i, k):
+                l.append(sums2[j-1]-sums2[i] + maxs[j])
+                indices.append(max_index[j])
+            real_maxes.append(l)
+            real_indcies.append(indices)
+        return real_maxes, real_indcies, sums
+
+    def to_max(self, arr, indices, k, default_index):
+        the_values=[]
+        the_indices=[]
+        size_per_arr= int(default_index/k)
+        l=[np.arange(i, len(arr[0])+1,dtype=int)*size_per_arr for i in range(len(arr))]
+        for curr_list, indices, position in zip(arr, indices, l):
+            val = 0
+            index = default_index
+            if len(curr_list) > 0:
+                val = np.max(curr_list)
+                index = position[np.argmax(curr_list)] + indices[np.argmax(curr_list)]
+            the_values.append(val)
+            the_indices.append(index)
+        return the_values, the_indices
+
     def the_real_stuff(self, t_2_s, s_2_t, t_in, start=None, stop=None, previous_left_in=None):
-        pass
+        t = t_in[s_2_t]
+        
+        t_mean = np.mean(t)
+        t_cumsum = np.cumsum(t)-t[0]
+        k=20
+        test = t-t_mean
+        #print(np.sum(test))
+        real_maxes_right, indices_right,sums=self.compute_sums(k, test)
+        #for l,index in zip(real_maxes_right, indices_right):
+        #    print(l)
+        #    print(index)
+
+        real_maxes_left, indices_left,_=self.compute_sums(k, test[::-1])
+        
+        #for l in real_maxes_left:
+        #    print(l)
+
+        best_score = []
+        right_estimates, right_indices = self.to_max(real_maxes_right, indices_right, k, len(t))
+        left_estimates, left_indices = self.to_max(real_maxes_left, indices_left, k, len(t))
+        left_estimates = list(reversed(left_estimates))
+        left_indices = [len(t)-i for i in reversed(left_indices)]
+        #print()
+        #print()
+        #print(right_indices)
+        #print(left_estimates)
+        real_maxes_left=list(reversed(real_maxes_left))
+        indices_left=list(reversed(indices_left))
+        #print([l+r for l,r in zip(left_estimates[1:], right_estimates[:-1])])
+        #print([l+r for l,r in zip(left_estimates[:-1], right_estimates[1:])])
+        lr_estimates=[l+r+s for l,r,s in zip(left_estimates, right_estimates, sums)]
+        lr_indices=[(l, r) for l,r in zip(left_indices, right_indices)]
+        #print(sums)
+        #print(lr_estimates)
+        #print(lr_indices)
+        #print(np.max(lr_estimates))
+        best_indices = lr_indices[np.argmax(lr_estimates)]
+        #print(best_indices)
+        self.best_l = best_indices[0]
+        self.best_r = best_indices[1]
+        self.best = np.max(lr_estimates)
+
+
+        for i, arr in enumerate(np.split(t, k)):
+            self.naive(arr[1:-1])
     
 
     
@@ -387,15 +489,15 @@ print(n*(n/1)/2)
 
 algo = tmp()
 start_time = time.time()
-algo.naive_plus(inds_a, t)
+algo.naive(t, inds_a)
 print('naive'+" --- %s seconds ---" % (time.time() - start_time))
 print(algo.best_l, algo.best_r, algo.best, algo.num_calls)
 
 
 algo = tmp()
 start_time = time.time()
-algo.generalising_apriori2(ts, inds_a, t)
-print('apriori2'+" --- %s seconds ---" % (time.time() - start_time))
+algo.the_real_stuff(ts, inds_a, t)
+print('stuff'+" --- %s seconds ---" % (time.time() - start_time))
 print(algo.best_l, algo.best_r, algo.best, algo.num_calls)
 #for tpl in algo.num_candidates:
 #    print(tpl)
