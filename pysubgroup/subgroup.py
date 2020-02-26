@@ -72,7 +72,7 @@ class NominalSelector(SelectorBase):
     def compute_descriptions(cls, attribute_name, attribute_value, selector_name):
         if isinstance(attribute_value, (str, bytes)):
             query = str(attribute_name) + "==" + "'" + str(attribute_value) + "'"
-        elif np.isnan(attribute_value):
+        elif pd.isnull(attribute_value):
             query = attribute_name + ".isnull()"
         else:
             query = str(attribute_name) + "==" + str(attribute_value)
@@ -143,7 +143,7 @@ class NumericSelector(SelectorBase):
         return self._upper_bound
 
     def covers(self, data_instance):
-        val = data_instance[self.attribute_name].to_numpy()
+        val = data_instance[self.attribute_name]
         return np.logical_and(val >= self.lower_bound, val < self.upper_bound)
 
     def __repr__(self):
@@ -176,6 +176,10 @@ class NumericSelector(SelectorBase):
             formatter = "{0:." + str(rounding_digits) + "f}"
         ub = upper_bound
         lb = lower_bound
+
+        if not((isinstance(ub, float) or isinstance(ub, int)) and (isinstance(lb, float) or isinstance(lb, int))):
+            return attribute_name + ": [" + str(lb) + ":" + str(ub) + "["
+
         if ub % 1:
             ub = formatter.format(ub)
         if lb % 1:
@@ -267,6 +271,7 @@ def create_nominal_selectors_for_attribute(data, attribute_name, dtypes=None):
     if dtypes[attribute_name] == 'bool':
         for s in nominal_selectors:
             s.is_bool = True
+        nominal_selectors = [sel for sel in nominal_selectors if sel.attribute_value == True]
     return nominal_selectors
 
 
@@ -280,7 +285,7 @@ def create_numeric_selectors(data, nbins=5, intervals_only=True, weighting_attri
     return numeric_selectors
 
 
-def create_numeric_selector_for_attribute(data, attr_name, nbins=5, intervals_only=True, weighting_attribute=None):
+def create_numeric_selector_for_attribute(data, attr_name, nbins=5, intervals_only=True, weighting_attribute=None, no_inf=False):
     numeric_selectors = []
     data_not_null = data[data[attr_name].notnull()]
 
@@ -294,11 +299,11 @@ def create_numeric_selector_for_attribute(data, attr_name, nbins=5, intervals_on
     else:
         cutpoints = ps.equal_frequency_discretization(data, attr_name, nbins, weighting_attribute)
         if intervals_only:
-            old_cutpoint = float("-inf")
+            old_cutpoint = data_not_null[attr_name].min() if no_inf else float("-inf")
             for c in cutpoints:
                 numeric_selectors.append(NumericSelector(attr_name, old_cutpoint, c))
                 old_cutpoint = c
-            numeric_selectors.append(NumericSelector(attr_name, old_cutpoint, float("inf")))
+            numeric_selectors.append(NumericSelector(attr_name, old_cutpoint, data_not_null[attr_name].max() if no_inf else float("inf")))
         else:
             for c in cutpoints:
                 numeric_selectors.append(NumericSelector(attr_name, c, float("inf")))

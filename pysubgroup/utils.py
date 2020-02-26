@@ -46,7 +46,7 @@ def equal_frequency_discretization(data, attribute_name, nbins=5, weighting_attr
     cutpoints = []
     if weighting_attribute is None:
         cleaned_data = data[attribute_name]
-        cleaned_data = cleaned_data[~np.isnan(cleaned_data)]
+        cleaned_data = cleaned_data[~pd.isnull(cleaned_data)]
         sorted_data = sorted(cleaned_data)
         number_instances = len(sorted_data)
         for i in range(1, nbins):
