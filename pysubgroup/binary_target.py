@@ -10,11 +10,15 @@ import scipy.stats
 
 import pysubgroup as ps
 
-from pysubgroup.subgroup import EqualitySelector
+from pysubgroup.subgroup_description import EqualitySelector
 
 
 @total_ordering
-class BinaryTarget():
+class BinaryTarget:
+
+    statistic_types = ('size_sg', 'size_dataset', 'positives_sg', 'positives_dataset', 'size_complement',
+                      'relative_size_sg', 'relative_size_complement', 'coverage_sg', 'coverage_complement',
+                      'target_share_sg', 'target_share_complement', 'target_share_dataset', 'lift')
 
     def __init__(self, target_attribute=None, target_value=None, target_selector=None):
         """
@@ -45,20 +49,24 @@ class BinaryTarget():
         return [self.target_selector.get_attribute_name()]
 
     def get_base_statistics(self, subgroup, data):
-
-        sg_instances = subgroup.covers(data)
+        cover_arr, size_sg = ps.get_cover_array_and_size(subgroup, len(data), data)
         positives = self.covers(data)
-        instances_subgroup = np.sum(sg_instances)
+        instances_subgroup = size_sg
         positives_dataset = np.sum(positives)
         instances_dataset = len(data)
-        positives_subgroup = np.sum(np.logical_and(sg_instances, positives))
+        positives_subgroup = np.sum(positives[cover_arr])
         return instances_dataset, positives_dataset, instances_subgroup, positives_subgroup
 
+    def calculate_statistics(self, subgroup, data, cached_statistics=None):
+        if cached_statistics is None or not isinstance(cached_statistics, dict):
+            statistics = dict()
+        elif all(k in cached_statistics for k in BinaryTarget.statistic_types):
+            return cached_statistics
+        else:
+            statistics = cached_statistics
 
-    def calculate_statistics(self, subgroup, data):
         (instances_dataset, positives_dataset, instances_subgroup, positives_subgroup) = \
             self.get_base_statistics(subgroup, data)
-        statistics = {}
         statistics['size_sg'] = instances_subgroup
         statistics['size_dataset'] = instances_dataset
         statistics['positives_sg'] = positives_subgroup
@@ -71,43 +79,28 @@ class BinaryTarget():
         statistics['target_share_sg'] = positives_subgroup / instances_subgroup
         statistics['target_share_complement'] = (positives_dataset - positives_subgroup) / (instances_dataset - instances_subgroup)
         statistics['target_share_dataset'] = positives_dataset / instances_dataset
-        statistics['lift'] = (positives_subgroup / instances_subgroup) / (positives_dataset / instances_dataset)
+        statistics['lift'] = statistics['target_share_sg'] / statistics['target_share_dataset']
         return statistics
 
 
-
-class SimplePositivesQF(ps.AbstractInterestingnessMeasure): # pylint: disable=abstract-method
-    tpl = namedtuple('PositivesQF_parameters', ('size', 'positives_count'))
+class SimplePositivesQF(ps.AbstractInterestingnessMeasure):  # pylint: disable=abstract-method
+    tpl = namedtuple('PositivesQF_parameters', ('size_sg', 'positives_count'))
 
     def __init__(self):
-        self.datatset_statistics = None
+        self.dataset_statistics = None
         self.positives = None
         self.has_constant_statistics = False
-        self.required_stat_attrs = ('size', 'positives_count')
+        self.required_stat_attrs = ('size_sg', 'positives_count')
 
-    def calculate_constant_statistics(self, task):
-        assert isinstance(task.target, BinaryTarget)
-        data = task.data
-        self.positives = task.target.covers(data)
-        self.datatset_statistics = SimplePositivesQF.tpl(len(data), np.sum(self.positives))
+    def calculate_constant_statistics(self, data, target):
+        assert isinstance(target, BinaryTarget)
+        self.positives = target.covers(data)
+        self.dataset_statistics = SimplePositivesQF.tpl(len(data), np.sum(self.positives))
         self.has_constant_statistics = True
 
-    def calculate_statistics(self, subgroup, data=None):
-        if hasattr(subgroup, "representation"):
-            cover_arr = subgroup
-            size = subgroup.size
-        elif isinstance(subgroup, slice):
-            cover_arr = subgroup
-            # https://stackoverflow.com/questions/36188429/retrieve-length-of-slice-from-slice-object-in-python
-            size = len(range(*subgroup.indices(len(self.positives))))
-        else:
-            cover_arr = subgroup.covers(data)
-            size = np.count_nonzero(cover_arr)
-        return SimplePositivesQF.tpl(size, np.count_nonzero(self.positives[cover_arr]))
-
-    def is_applicable(self, subgroup):
-        return isinstance(subgroup.target, BinaryTarget)
-
+    def calculate_statistics(self, subgroup, target, data, statistics=None):
+        cover_arr, size_sg = ps.get_cover_array_and_size(subgroup, len(self.positives), data)
+        return SimplePositivesQF.tpl(size_sg, np.count_nonzero(self.positives[cover_arr]))
 
 
 # TODO Make ChiSquared useful for real nominal data not just binary
@@ -146,8 +139,8 @@ class ChiSquaredQF(SimplePositivesQF):
         if (instances_subgroup < min_instances) or ((instances_dataset - instances_subgroup) < min_instances):
             return float("-inf")
 
-        negatives_subgroup =  instances_subgroup - positives_subgroup # pylint: disable=bad-whitespace
-        negatives_dataset =    instances_dataset - positives_dataset # pylint: disable=bad-whitespace
+        negatives_subgroup = instances_subgroup - positives_subgroup # pylint: disable=bad-whitespace
+        negatives_dataset = instances_dataset - positives_dataset # pylint: disable=bad-whitespace
         negatives_complement = negatives_dataset - negatives_subgroup
         positives_complement = positives_dataset - positives_subgroup
 
@@ -192,7 +185,6 @@ class ChiSquaredQF(SimplePositivesQF):
         stat : {'chi2', 'p'}
             whether to report the test statistic or the p-value (see scipy.stats.chi2_contingency)
         """
-
         if direction == 'both':
             self.bidirect = True
             self.direction_positive = True
@@ -206,16 +198,10 @@ class ChiSquaredQF(SimplePositivesQF):
         self.index = {'chi2' : 0, 'p': 1}[stat]
         super().__init__()
 
-
-    def evaluate(self, subgroup, statistics=None):
-        statistics = self.ensure_statistics(subgroup, statistics)
-        datatset = self.datatset_statistics
-        return ChiSquaredQF.chi_squared_qf(datatset.size, datatset.positives_count, statistics.size, statistics.positives_count, self.min_instances, self.bidirect, self.direction_positive, self.index)
-
-    def supports_weights(self):
-        return True
-
-
+    def evaluate(self, subgroup, target, data, statistics=None):
+        statistics = self.ensure_statistics(subgroup, target, data, statistics)
+        dataset = self.dataset_statistics
+        return ChiSquaredQF.chi_squared_qf(dataset.size_sg, dataset.positives_count, statistics.size_sg, statistics.positives_count, self.min_instances, self.bidirect, self.direction_positive, self.index)
 
 
 class StandardQF(SimplePositivesQF, ps.BoundedInterestingnessMeasure):
@@ -248,32 +234,26 @@ class StandardQF(SimplePositivesQF, ps.BoundedInterestingnessMeasure):
         Parameters
         ----------
         a : float
-            exponent to scale the relative size to the difference in means
+            exponent to trade-off the relative size with the difference in means
         """
-
         self.a = a
         super().__init__()
 
-    def evaluate(self, subgroup, statistics=None):
-        statistics = self.ensure_statistics(subgroup, statistics)
-        datatset = self.datatset_statistics
-        return StandardQF.standard_qf(self.a, datatset.size, datatset.positives_count, statistics.size, statistics.positives_count)
+    def evaluate(self, subgroup, target, data, statistics=None):
+        statistics = self.ensure_statistics(subgroup, target, data, statistics)
+        dataset = self.dataset_statistics
+        return StandardQF.standard_qf(self.a, dataset.size_sg, dataset.positives_count, statistics.size_sg, statistics.positives_count)
 
-    def optimistic_estimate(self, subgroup, statistics=None):
-        statistics = self.ensure_statistics(subgroup, statistics)
-        datatset = self.datatset_statistics
-        return StandardQF.standard_qf(self.a, datatset.size, datatset.positives_count, statistics.positives_count, statistics.positives_count)
+    def optimistic_estimate(self, subgroup, target, data, statistics=None):
+        statistics = self.ensure_statistics(subgroup, target, data, statistics)
+        dataset = self.dataset_statistics
+        return StandardQF.standard_qf(self.a, dataset.size_sg, dataset.positives_count, statistics.positives_count, statistics.positives_count)
 
-    def optimistic_generalisation(self, subgroup, statistics=None):
-        statistics = self.ensure_statistics(subgroup, statistics)
-        datatset = self.datatset_statistics
-        pos_remaining = datatset.positives_count - statistics.positives_count
-        return StandardQF.standard_qf(self.a, datatset.size, datatset.positives_count, statistics.size + pos_remaining, datatset.positives_count)
-
-    def supports_weights(self):
-        return True
-
-
+    def optimistic_generalisation(self, subgroup, target, data, statistics=None):
+        statistics = self.ensure_statistics(subgroup, target, data, statistics)
+        dataset = self.dataset_statistics
+        pos_remaining = dataset.positives_count - statistics.positives_count
+        return StandardQF.standard_qf(self.a, dataset.size_sg, dataset.positives_count, statistics.size_sg + pos_remaining, dataset.positives_count)
 
 
 class LiftQF(StandardQF):
@@ -308,7 +288,6 @@ class SimpleBinomialQF(StandardQF):
         super().__init__(0.5)
 
 
-
 class WRAccQF(StandardQF):
     """
     Weighted Relative Accuracy Quality Function
@@ -324,8 +303,6 @@ class WRAccQF(StandardQF):
         super().__init__(1.0)
 
 
-
-
 #####
 # GeneralizationAware Interestingness Measures
 #####
@@ -334,25 +311,24 @@ class GeneralizationAware_StandardQF(ps.GeneralizationAwareQF_stats):
         super().__init__(StandardQF(0))
         self.a = a
 
-
     def get_max(self, *args):
         max_ratio = 0.0
         max_stats = None
         for stat in args:
-            if stat.size > 0:
-                ratio = stat.positives_count / stat.size
+            if stat.size_sg > 0:
+                ratio = stat.positives_count / stat.size_sg
                 if ratio > max_ratio:
                     max_ratio = ratio
                     max_stats = stat
         return max_stats
 
-    def evaluate(self, subgroup, statistics_or_data=None):
-        statistics = self.ensure_statistics(subgroup, statistics_or_data)
+    def evaluate(self, subgroup, target, data, statistics=None):
+        statistics = self.ensure_statistics(subgroup, target, data, statistics)
         sg_stats = statistics.subgroup_stats
         general_stats = statistics.generalisation_stats
-        if sg_stats.size == 0 or general_stats.size == 0:
+        if sg_stats.size_sg == 0 or general_stats.size_sg == 0:
             return np.nan
 
-        sg_ratio = sg_stats.positives_count / sg_stats.size
-        general_ratio = general_stats.positives_count / general_stats.size
-        return (sg_stats.size / self.stats0.size) ** self.a * (sg_ratio - general_ratio)
+        sg_ratio = sg_stats.positives_count / sg_stats.size_sg
+        general_ratio = general_stats.positives_count / general_stats.size_sg
+        return (sg_stats.size_sg / self.stats0.size_sg) ** self.a * (sg_ratio - general_ratio)

@@ -2,8 +2,8 @@ from setuptools import setup
 
 setup(
     name='pysubgroup',
-    version='0.7.0',
-    packages=['pysubgroup'],
+    version='0.7.2',
+    packages=['pysubgroup', 'pysubgroup.tests'],
     package_data={'pysubgroup': ['data/credit-g.arff', 'data/titanic.csv']},
     url='http://florian.lemmerich.net/pysubgroup',
     license='',
